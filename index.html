@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adivina el Código</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --card: #1e1e1e;
+            --text: #ffffff;
+            --green: #4CAF50;
+            --yellow: #FFC107;
+            --red: #F44336;
+            --accent: #2196F3;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: var(--card);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        h2 { color: var(--accent); margin-top: 0; }
+        .pista-superior {
+            font-size: 2.5rem;
+            font-weight: bold;
+            letter-spacing: 8px;
+            margin: 15px 0;
+            color: #fff;
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .input-container {
+            margin: 25px 0;
+        }
+        input[type="text"] {
+            background: #2a2a2a;
+            border: 2px solid var(--accent);
+            color: #fff;
+            font-size: 2rem;
+            text-align: center;
+            width: 160px;
+            padding: 5px;
+            border-radius: 8px;
+            letter-spacing: 5px;
+        }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-weight: bold;
+            width: 100%;
+        }
+        button:active { opacity: 0.8; }
+        .historial {
+            text-align: left;
+            margin-top: 20px;
+            max-height: 250px;
+            overflow-y: auto;
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .intento-fila {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-family: monospace;
+            font-size: 1.4rem;
+        }
+        .digito-caja {
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 5px;
+            font-weight: bold;
+            color: #000;
+        }
+        .c-verde { background-color: var(--green); color: white; }
+        .c-amarillo { background-color: var(--yellow); color: black; }
+        .c-rojo { background-color: var(--red); color: white; }
+        .pantalla-cambio {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: fixed;
+            top:0; left:0; width:100vw; height:100vh;
+            background: var(--bg);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    </div>
+
+<script>
+    // Estado del juego
+    let fase = "CONFIGURACION_J1"; // CONFIGURACION_J1, CONFIGURACION_J2, JUEGO, FIN
+    let codigoJ1 = "";
+    let codigoJ2 = "";
+    let turnoActual = 1; // 1 o 2
+    
+    // Historiales: guardan objetos { intento: "1234", colores: ["rojo",...] }
+    let historialJ1 = []; 
+    let historialJ2 = [];
+
+    // Pistas de formato estilo "2X4X"
+    let pistaGlobalJ1 = ["X", "X", "X", "X"]; // Lo que J1 sabe de J2
+    let pistaGlobalJ2 = ["X", "X", "X", "X"]; // Lo que J2 sabe de J1
+
+    const app = document.getElementById("app");
+
+    function render() {
+        if (fase === "CONFIGURACION_J1") {
+            app.innerHTML = `
+                <h2>Jugador 1</h2>
+                <p>Introduce tu número secreto de 4 dígitos.<br>(¡Que no lo vea el Jugador 2!)</p>
+                <div class="input-container">
+                    <input type="text" id="inputCodigo" maxlength="4" placeholder="0000" autocomplete="off">
+                </div>
+                <button onclick="guardarCodigo(1)">Guardar y pasar a J2</button>
+            `;
+        } 
+        else if (fase === "CONFIGURACION_J2") {
+            app.innerHTML = `
+                <h2>Jugador 2</h2>
+                <p>Introduce tu número secreto de 4 dígitos.<br>(¡Que no lo vea el Jugador 1!)</p>
+                <div class="input-container">
+                    <input type="text" id="inputCodigo" maxlength="4" placeholder="0000" autocomplete="off">
+                </div>
+                <button onclick="guardarCodigo(2)">Empezar a Jugar</button>
+            `;
+        } 
+        else if (fase === "CAMBIO_TURNO") {
+            app.innerHTML = `
+                <div class="pantalla-cambio">
+                    <h2>¡Turno del Jugador ${turnoActual}!</h2>
+                    <p>Pasa el móvil al Jugador ${turnoActual}.</p>
+                    <button style="width:auto;" onclick="fase='JUEGO'; render();">¡Ya lo tengo!</button>
+                </div>
+            `;
+        }
+        else if (fase === "JUEGO") {
+            let pista = turnoActual === 1 ? pistaGlobalJ1.join("") : pistaGlobalJ2.join("");
+            let historial = turnoActual === 1 ? historialJ1 : historialJ2;
+
+            let historialHTML = historial.slice().reverse().map(item => {
+                let digitosHTML = item.intento.split("").map((digito, index) => {
+                    let claseColor = `c-${item.colores[index]}`;
+                    return `<div class="digito-caja ${claseColor}">${digito}</div>`;
+                }).join("");
+                return `<div class="intento-fila">${digitosHTML}</div>`;
+            }).join("");
+
+            app.innerHTML = `
+                <h2>Jugador ${turnoActual}</h2>
+                <div class="pista-superior">${pista}</div>
+                <p>Intentando descubrir el número del Jugador ${turnoActual === 1 ? 2 : 1}</p>
+                
+                <div class="input-container">
+                    <input type="text" id="intentoInput" maxlength="4" placeholder="????" autocomplete="off">
+                </div>
+                <button onclick="procesarIntento()">Enviar Intento</button>
+
+                <h3>Tus intentos anteriores:</h3>
+                <div class="historial">
+                    ${historialHTML || '<p style="text-align:center; color:#666;">Ningún intento todavía.</p>'}
+                </div>
+            `;
+        }
+        else if (fase === "FIN") {
+            app.innerHTML = `
+                <h2>🎉 ¡Tenemos un ganador! 🎉</h2>
+                <h1 style="color: var(--green)">¡Gana el Jugador ${turnoActual}!</h1>
+                <p>Descubrió el código rival con éxito.</p>
+                <button onclick="reiniciarJuego()">Jugar otra vez</button>
+            `;
+        }
+    }
+
+    function guardarCodigo(jugador) {
+        const input = document.getElementById("inputCodigo").value;
+        if (input.length !== 4 || isNaN(input)) {
+            alert("Por favor, introduce un número válido de 4 dígitos.");
+            return;
+        }
+        if (jugador === 1) {
+            codigoJ1 = input;
+            fase = "CONFIGURACION_J2";
+        } else {
+            codigoJ2 = input;
+            fase = "CAMBIO_TURNO";
+            turnoActual = 1;
+        }
+        render();
+    }
+
+    function procesarIntento() {
+        const inputEl = document.getElementById("intentoInput");
+        const intento = inputEl.value;
+        
+        if (intento.length !== 4 || isNaN(intento)) {
+            alert("Introduce un intento válido de 4 dígitos.");
+            return;
+        }
+
+        // El rival es el que tiene el código a adivinar
+        let codigoRival = turnoActual === 1 ? codigoJ2 : codigoJ1;
+        let pistaGlobal = turnoActual === 1 ? pistaGlobalJ1 : pistaGlobalJ2;
+        let historial = turnoActual === 1 ? historialJ1 : historialJ2;
+
+        let colores = ["rojo", "rojo", "rojo", "rojo"];
+        
+        // Arrays auxiliares para manejar números repetidos correctamente (Lógica Mastermind)
+        let rivalMarcado = [false, false, false, false];
+        let intentoMarcado = [false, false, false, false];
+
+        // 1ª Pasada: Buscar Verdes (Posición exacta)
+        for (let i = 0; i < 4; i++) {
+            if (intento[i] === codigoRival[i]) {
+                colores[i] = "verde";
+                pistaGlobal[i] = intento[i]; // Se actualiza el "2X4X" de arriba
+                rivalMarcado[i] = true;
+                intentoMarcado[i] = true;
+            }
+        }
+
+        // 2ª Pasada: Buscar Amarillos (Existe en otra posición)
+        for (let i = 0; i < 4; i++) {
+            if (!intentoMarcado[i]) {
+                for (let j = 0; j < 4; j++) {
+                    if (!rivalMarcado[j] && intento[i] === codigoRival[j]) {
+                        colores[i] = "amarillo";
+                        rivalMarcado[j] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Guardar en el historial del jugador actual
+        historial.push({ intento: intento, colores: colores });
+
+        // Comprobar si ha ganado (4 verdes)
+        if (intento === codigoRival) {
+            fase = "FIN";
+        } else {
+            // Cambiar turno y poner pantalla de espera intermedia
+            turnoActual = turnoActual === 1 ? 2 : 1;
+            fase = "CAMBIO_TURNO";
+        }
+        render();
+    }
+
+    function reiniciarJuego() {
+        fase = "CONFIGURACION_J1";
+        codigoJ1 = ""; codigoJ2 = "";
+        historialJ1 = []; historialJ2 = [];
+        pistaGlobalJ1 = ["X", "X", "X", "X"];
+        pistaGlobalJ2 = ["X", "X", "X", "X"];
+        turnoActual = 1;
+        render();
+    }
+
+    // Ejecutar al cargar la página
+    render();
+</script>
+
+</body>
+</html>
